@@ -8,7 +8,7 @@ puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
     const { username, limit, mediaType } = req.query;
-    const maxItems = limit ? parseInt(limit) : 100;
+    const maxItems = limit ? parseInt(limit) : null;
     const userFolder = path.join(process.env.DIR_STORAGE, 'instagram', username);
 
     let allowedTypes = [];
@@ -16,7 +16,7 @@ const getAllMedia = async (req, res) => {
         allowedTypes = ['posts', 'highlights', 'stories'];
     } else {
         allowedTypes = String(mediaType)
-            .replace(/[\[\]"']/g, '') 
+            .replace(/[\[\]"']/g, '')
             .split(',')
             .map(t => t.trim().toLowerCase())
             .filter(Boolean);
@@ -30,7 +30,7 @@ const getAllMedia = async (req, res) => {
 
     try {
         browser = await puppeteer.launch({
-            headless: 'new',
+            headless: false,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
@@ -70,7 +70,7 @@ const getAllMedia = async (req, res) => {
                 const edges = connection?.edges || connection?.items || data.items || [];
 
                 for (const edge of edges) {
-                    if (maxItems && seenIds.size >= maxItems) break;
+                    if (maxItems !== null && seenIds.size >= maxItems) break;
 
                     const node = edge.node?.media || edge.node || edge;
                     if (!userInfo && node.user?.hd_profile_pic_url_info?.url && typeLabel === 'posts') {
@@ -101,7 +101,7 @@ const getAllMedia = async (req, res) => {
                                 });
                                 seenIds.add(mediaId);
                             }
-                           
+
                         }
                     }
                 }
@@ -171,12 +171,12 @@ const getAllMedia = async (req, res) => {
 
         await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'networkidle2' });
 
-        if (allowedTypes.includes('highlights') && seenIds.size < maxItems) {
+        if (allowedTypes.includes('highlights') && (maxItems === null || seenIds.size < maxItems)) {
             const highlightSelector = 'header canvas[style*="position: absolute"], div[role="menu"] canvas[style*="position: absolute"]';
             const count = await page.evaluate((sel) => document.querySelectorAll(sel).length, highlightSelector);
 
             for (let i = 0; i < count; i++) {
-                if (seenIds.size >= maxItems) break;
+                if (maxItems !== null && seenIds.size >= maxItems) break;
                 try {
                     const highlights = await page.$$(highlightSelector);
                     if (highlights[i]) {
@@ -189,23 +189,23 @@ const getAllMedia = async (req, res) => {
             }
         }
 
-        if (allowedTypes.includes('posts') && seenIds.size < maxItems) {
+        if (allowedTypes.includes('posts') && (maxItems === null || seenIds.size < maxItems)) {
             const beforePosts = seenIds.size;
             console.log(`[Instagram] Haciendo scroll para buscar posts...`);
-            
+
             let lastHeight = await page.evaluate('document.body.scrollHeight');
             let scrollRetries = 0;
 
-            while (seenIds.size < maxItems && scrollRetries < 3) {
+            while ((maxItems === null || seenIds.size < maxItems) && scrollRetries < 3) {
                 await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
                 await new Promise(r => setTimeout(r, 3000)); // Espera para que el interceptor trabaje
-                
+
                 let newHeight = await page.evaluate('document.body.scrollHeight');
-                
+
                 console.log(`[Instagram] Progreso: ${seenIds.size}/${maxItems} elementos totales capturados.`);
 
                 if (newHeight === lastHeight) {
-                    scrollRetries++; 
+                    scrollRetries++;
                 } else {
                     scrollRetries = 0;
                     lastHeight = newHeight;
@@ -219,7 +219,7 @@ const getAllMedia = async (req, res) => {
         const userAgent = await page.evaluate(() => navigator.userAgent);
         await browser.close();
 
-        const finalTasks = maxItems ? allMediaTasks.slice(0, maxItems) : allMediaTasks;
+        const finalTasks = maxItems !== null ? allMediaTasks.slice(0, maxItems) : allMediaTasks;
 
         const downloadResults = await mapLimit(finalTasks, process.env.THREADS_DOWNLOAD || 5, async (item) => {
             const subFolder = item.ext === 'mp4' ? 'videos' : 'images';
