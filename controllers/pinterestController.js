@@ -134,10 +134,14 @@ const getAllMedia = async (req, res) => {
             if (hasMore) await new Promise(r => setTimeout(r, 800));
         }
 
-        res.json({
+         const profileInfo = firstPin ? (firstPin.native_creator || firstPin.pinner) : { full_name: username, id: null };
+         
+         res.json({
             status: true,
-            nickname: firstPin ? (firstPin.native_creator?.full_name || username) : username,
+            nickname: profileInfo.full_name,
+            user_id: profileInfo.id,
             username,
+            total_requested: maxItems,
             total_proccessed: allDownloaded.length,
             files: allDownloaded
         });
