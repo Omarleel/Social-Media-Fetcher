@@ -2,35 +2,45 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
-const { mapLimit } = require('../utils/utils');
+const { mapLimit, moveMouseInCircle } = require('../utils/utils');
 puppeteer.use(StealthPlugin());
 
-const getAllVideos = async (req, res) => {
+const getAllMedia = async (req, res) => {
     const { username, limit } = req.query;
     const cleanUsername = username.replace('@', '');
     const maxItems = limit ? parseInt(limit) : null;
-    
+
     const userFolder = path.join(process.env.DIR_STORAGE, 'tiktok', cleanUsername);
     let browser;
     let author = null;
     let allMediaTasks = [];
-    
+
     try {
-        browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox'] });
+        browser = await puppeteer.launch({
+            headless: 'new', args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--start-maximized'
+            ]
+        });
         const page = await browser.newPage();
+        await page.setViewport({ width: 1280, height: 720 });
+        // await injectVisualCursor(page);
+
         const videoListMap = new Map();
         let keepScrolling = true;
 
         page.on('response', async (response) => {
             if (response.url().includes('/api/post/item_list/')) {
                 const data = await response.json().catch(() => ({}));
-                
+
                 if (!author && data.itemList?.[0]?.author) {
                     author = data.itemList[0].author;
-                    allMediaTasks.push({ 
-                        url: author.avatarLarger, 
-                        id: 'profile_picture', 
-                        ext: 'jpg' 
+                    allMediaTasks.push({
+                        url: author.avatarLarger,
+                        id: 'profile_picture',
+                        ext: 'jpg'
                     });
                 }
 
@@ -46,22 +56,56 @@ const getAllVideos = async (req, res) => {
             }
         });
 
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36');
+
         await page.goto(`https://www.tiktok.com/@${cleanUsername}`, { waitUntil: 'networkidle2' });
 
-        while (keepScrolling) {
-            const totalCollected = allMediaTasks.length + videoListMap.size;
-            if (maxItems && totalCollected >= maxItems) break;
+        let lastHeight = await page.evaluate(() => document.body.scrollHeight);
+        let stalledCycles = 0;
 
-            await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
-            await new Promise(r => setTimeout(r, 3000));
-            
-            const isBottom = await page.evaluate(() => (window.innerHeight + window.scrollY) >= document.body.offsetHeight);
-            if (isBottom) break;
+        while (keepScrolling) {
+            const currentSize = videoListMap.size;
+            const totalCollected = allMediaTasks.length + currentSize;
+
+            if (maxItems && totalCollected >= maxItems) break;
+            await moveMouseInCircle(page);
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+            try {
+                await page.waitForFunction(
+                    (prevHeight) => {
+                        const isEnd = !!document.querySelector('[data-e2e="user-post-item-list-no-more"]');
+                        return document.body.scrollHeight > prevHeight || isEnd;
+                    },
+                    { timeout: 5000 },
+                    lastHeight
+                );
+            } catch (e) {
+                console.log("[DEBUG] Tiempo de espera de carga agotado, verificando...");
+            }
+
+            let newHeight = await page.evaluate(() => document.body.scrollHeight);
+
+            if (newHeight === lastHeight) {
+                stalledCycles++;
+                await page.evaluate(() => window.scrollBy(0, -200));
+                await new Promise(r => setTimeout(r, 500));
+                await page.evaluate(() => window.scrollBy(0, 400));
+
+                if (stalledCycles >= 3) {
+                    console.log("[DEBUG] El contenido dejó de crecer. Terminando scroll.");
+                    break;
+                }
+            } else {
+                stalledCycles = 0;
+                lastHeight = newHeight;
+            }
+            await new Promise(r => setTimeout(r, 1000));
         }
 
         const cookies = (await page.cookies()).map(c => `${c.name}=${c.value}`).join('; ');
         const userAgent = await page.evaluate(() => navigator.userAgent);
-        
+
         const videoTasks = Array.from(videoListMap).map(([id, url]) => ({ id, url, ext: 'mp4' }));
         allMediaTasks = [...allMediaTasks, ...videoTasks];
 
@@ -80,14 +124,14 @@ const getAllVideos = async (req, res) => {
 
         await browser.close();
 
-        res.json({ 
+        res.json({
             status: true,
             nickname: author?.nickname || cleanUsername,
-            user_id: author?.id, 
-            username: cleanUsername, 
+            user_id: author?.id,
+            username: cleanUsername,
             total_requested: maxItems,
-            total_proccessed: finalTasks.length, 
-            results 
+            total_proccessed: finalTasks.length,
+            results
         });
 
     } catch (error) {
@@ -96,4 +140,4 @@ const getAllVideos = async (req, res) => {
     }
 };
 
-module.exports = { getAllVideos };
+module.exports = { getAllMedia };
