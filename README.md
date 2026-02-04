@@ -51,7 +51,7 @@ PORT=3000
 DIR_STORAGE=./storage
 THREADS_DOWNLOAD=5  # Número de hilos paralelos para descargas
 PINTEREST_COOKIE=   # Cookie: _pinterest_sess
-INSTA_COOKIE=       # Cookies completas: sessionid, ds_user_id, etc.
+INSTA_COOKIE=       # Cookie: sessionid
 INSTA_CSRF_TOKEN=   # Valor del header x-csrftoken
 
 ```
@@ -63,7 +63,7 @@ INSTA_CSRF_TOKEN=   # Valor del header x-csrftoken
 | Plataforma | Endpoint | Parámetros | Descripción |
 | --- | --- | --- | --- |
 | **TikTok** | `/tiktok/get-all-media` | `username` | Scroll infinito y descarga de videos .mp4 y Foto de Perfil |
-| **Pinterest** | `/pinterest/get-all-media` | `username` | Paginación por bookmarks y descarga de imágenes |
+| **Pinterest** | `/pinterest/get-all-media` | `username` | Paginación por bookmarks y descarga de imágenes/videos |
 | **Instagram** | `/instagram/get-all-media` | `username` | Descarga de Stories, Highlights, Videos, Imágenes y Foto de Perfil |
 
 ---

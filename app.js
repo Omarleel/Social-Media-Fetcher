@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 // Rutas Segmentadas
 app.get('/tiktok/get-all-media', tiktok.getAllVideos);
-app.get('/pinterest/get-all-media', pinterest.getAllPictures);
+app.get('/pinterest/get-all-media', pinterest.getAllMedia);
 app.get('/instagram/get-all-media', instagram.getAllMedia);
 
 app.listen(PORT, () => {
