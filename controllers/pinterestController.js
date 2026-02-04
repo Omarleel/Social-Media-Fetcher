@@ -50,7 +50,7 @@ const getAllMedia = async (req, res) => {
                 return bestVideo;
             }
 
-            const fallbackRegex = /https:\/\/v1\.pinimg\.com\/videos\/iht\/720p\/[a-zA-Z0-9_/.-]+\.mp4/g;
+            const fallbackRegex = /https:\/\/v1\.pinimg\.com\/videos\/iht\/720w\/[a-zA-Z0-9_/.-]+\.mp4/g;
             const fallbackMatches = html.match(fallbackRegex);
 
             return fallbackMatches ? fallbackMatches[0] : null;
