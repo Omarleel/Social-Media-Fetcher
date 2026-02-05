@@ -42,11 +42,8 @@ const getAllMedia = async (req, res) => {
             const matches = html.match(regex);
 
             if (matches && matches.length > 0) {
-
                 const uniqueUrls = [...new Set(matches)];
-
                 const bestVideo = uniqueUrls[0];
-
                 return bestVideo;
             }
 

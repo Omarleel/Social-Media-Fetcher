@@ -40,10 +40,23 @@ const getAllMedia = async (req, res) => {
         const page = await browser.newPage();
         const userAgent = await page.evaluate(() => navigator.userAgent);
 
-        const cookieArray = process.env.INSTA_COOKIE.split(';').map(pair => {
-            const [name, value] = pair.trim().split('=');
-            return { name, value, domain: '.instagram.com' };
-        });
+        const cookieArray = [
+            {
+                name: 'sessionid',
+                value: process.env.INSTA_SESSIONID,
+                domain: '.instagram.com',
+                path: '/',
+                secure: true,
+                httpOnly: true
+            },
+            {
+                name: 'csrftoken',
+                value: process.env.INSTA_CSRF_TOKEN,
+                domain: '.instagram.com',
+                path: '/',
+                secure: true
+            }
+        ];
         await page.setCookie(...cookieArray);
 
         const handleMediaFound = (item) => {
