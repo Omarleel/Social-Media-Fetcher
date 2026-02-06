@@ -129,7 +129,6 @@ const startOFScraper = async (req, res) => {
                 referer: `https://onlyfans.com/${username}/media`
             });
         }
-        
 
         console.log(`🎯 ID Capturado: ${userId}. Iniciando recolección de media...`);
 
@@ -149,7 +148,7 @@ const startOFScraper = async (req, res) => {
                 .replace(/<[^>]*>/g, '') 
                 .replace(/[\\/:*?"<>|]/g, '_')
                 .trim()
-                .substring(0, 30);
+                .substring(0, 30).trim() || 'no_text';
 
             const folderName = `${postDate}_${post.id}_${cleanText}`;
 
