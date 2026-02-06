@@ -3,60 +3,135 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const path = require('path');
 const { downloadFile } = require('../services/downloadService');
 const { mapLimit } = require('../utils/utils');
+const { smartScroll } = require('../utils/utilsOnlyfans');
 
 puppeteer.use(StealthPlugin());
 
-const startOFScraper = async (req, res) => {
-    const { userId } = req.query;
-    const username = userId;
+const USER_DATA_DIR = path.join(__dirname, '../config/of_profile');
 
-    if (!username) return res.status(400).json({ error: "userId query param is required" });
+const startOFScraper = async (req, res) => {
+    const { username, limit } = req.query;
+    const maxPosts = limit ? parseInt(limit) : null;
+
+    if (!username) return res.status(400).json({ error: "username query param is required" });
 
     let browser;
+    let userId = null; 
+    let tasks = [];
+    let interceptedPosts = [];
+    let hasMoreContent = true;
+
     try {
         browser = await puppeteer.launch({
             headless: false,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized']
+            userDataDir: USER_DATA_DIR, 
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox', 
+                '--start-maximized',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process' 
+            ]
         });
 
-        const page = await browser.newPage();
+        const pages = await browser.pages();
+        const page = pages.length > 0 ? pages[0] : await browser.newPage();
         await page.setViewport({ width: 1280, height: 800 });
 
-        // --- FASE 1: Autenticación Humana ---
+        console.log('🌐 Accediendo a OnlyFans...');
         await page.goto('https://onlyfans.com/', { waitUntil: 'networkidle2' });
-        console.log('🔴 ESPERANDO LOGIN: Por favor, completa el login en la ventana de Chrome...');
 
-        let loggedIn = false;
-        const maxAttempts = 60; 
-        for (let i = 0; i < maxAttempts; i++) {
-            const cookies = await page.cookies();
-            if (cookies.some(c => c.name === 'auth_id')) {
+        const checkLogin = async (p) => {
+            const cookies = await p.cookies();
+            return cookies.some(c => c.name === 'auth_id');
+        };
+
+        let loggedIn = await checkLogin(page);
+
+        if (!loggedIn) {
+            console.log('🔴 No se detectó sesión activa. ESPERANDO LOGIN MANUAL...');
+            try {
+                await page.waitForFunction(() => {
+                    return document.cookie.includes('auth_id') || !!document.querySelector('.b-chat__header');
+                }, { timeout: 300000 });
+                
                 loggedIn = true;
-                break;
+                console.log('✅ Login detectado y persistido en el perfil.');
+            } catch (e) {
+                throw new Error("Timeout: No iniciaste sesión a tiempo.");
             }
-            await new Promise(r => setTimeout(r, 5000));
-            if (i % 6 === 0) console.log(`⏳ Esperando login... (${i*5}s)`);
+        } else {
+            console.log('🟢 Sesión recuperada automáticamente desde el perfil.');
         }
 
         if (!loggedIn) throw new Error("Timeout: No se detectó el inicio de sesión.");
 
-        console.log('🟢 LOGIN DETECTADO. Navegando al perfil...');
-        await new Promise(r => setTimeout(r, 2000));
+        const waitForUserId = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error("Timeout capturando ID")), 30000);
 
-        // --- FASE 2: Intercepción de Respuestas de API ---
-        let interceptedPosts = [];
-        page.on('response', async (response) => {
-            const url = response.url();
-            if (url.includes('/posts/medias')) {
-                try {
-                    const json = await response.json();
-                    if (json.list) {
-                        interceptedPosts.push(...json.list);
-                        console.log(`✨ API: Capturados ${json.list.length} posts con media.`);
-                    }
-                } catch (e) { /* Ignorar si no es JSON válido */ }
-            }
+            page.on('response', async (response) => {
+                const url = response.url();
+
+                if (url.includes(`/api2/v2/users/${username}`) && !url.includes('/posts') && !url.includes('/subscribe')) {
+                    try {
+                        const json = await response.json();
+                        if (json.id) {
+                            clearTimeout(timeout);
+                            resolve(json);
+                        }
+                    } catch (e) {}
+                }
+
+                if (url.includes('/posts/medias')) {
+                    try {
+                        const json = await response.json();
+                        if (json.list) {
+                            if (maxPosts === null || interceptedPosts.length < maxPosts) {
+                                interceptedPosts.push(...json.list);
+                            }
+                            
+                            hasMoreContent = json.hasMore === true;
+
+                            if (maxPosts !== null && interceptedPosts.length >= maxPosts) {
+                                console.log(`limit alcanzado: ${interceptedPosts.length} posts.`);
+                                hasMoreContent = false;
+                            }
+                            
+                            console.log(`✨ API: Total posts capturados: ${interceptedPosts.length}`);
+                        }
+                    } catch (e) {}
+                }
+            });
         });
+
+        console.log(`🟢 Navegando a: https://onlyfans.com/${username}`);
+        await page.goto(`https://onlyfans.com/${username}`, { waitUntil: 'networkidle2' });
+
+        const userData = await waitForUserId;
+        userId = userData.id.toString();
+        const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'onlyfans', username);
+
+        if (userData.avatar) {
+            tasks.push({
+                id: 'profile_pic',
+                url: userData.avatar,
+                filename: `profile_picture.jpg`,
+                dest: userFolder,
+                referer: `https://onlyfans.com/${username}/media`
+            });
+        }
+        if (userData.header) {
+            tasks.push({
+                id: 'header_pic',
+                url: userData.header,
+                filename: `header_picture.jpg`,
+                dest: userFolder,
+                referer: `https://onlyfans.com/${username}/media`
+            });
+        }
+        
+
+        console.log(`🎯 ID Capturado: ${userId}. Iniciando recolección de media...`);
 
         await page.goto(`https://onlyfans.com/${username}/media`, { waitUntil: 'networkidle2' });
         await page.waitForSelector('.g-user-name', { timeout: 15000 });
@@ -66,29 +141,23 @@ const startOFScraper = async (req, res) => {
             scrapedAt: new Date().toISOString()
         }));
 
-        console.log(`📊 Extrayendo media de: ${profileData.name}`);
-        await autoScroll(page);
-
-        // --- FASE 3: Formateo de Tareas de Descarga ---
-        const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'onlyfans', username);
-        
-        const tasks = interceptedPosts.map(post => {
-            const postDate = post.postedAt.split('T')[0];
-            // Limpiamos el texto del post para usarlo de carpeta (máx 30 chars)
+        await smartScroll(page, () => hasMoreContent);
+        const finalPosts = maxPosts !== null ? interceptedPosts.slice(0, maxPosts) : interceptedPosts;
+        const postsTasks = finalPosts.flatMap(post => {
+            const postDate = post.postedAt ? post.postedAt.split('T')[0] : 'date_unknown';
             const cleanText = (post.text || 'no_text')
-                .replace(/<[^>]*>/g, '') // Quitar HTML tags
-                .replace(/[\\/:*?"<>|]/g, '_') // Quitar chars prohibidos en archivos
+                .replace(/<[^>]*>/g, '') 
+                .replace(/[\\/:*?"<>|]/g, '_')
                 .trim()
                 .substring(0, 30);
 
             const folderName = `${postDate}_${post.id}_${cleanText}`;
 
-            return post.media.map((m, index) => {
-                // Priorizamos el objeto 'full' que enviaste en tu ejemplo
+            return (post.media || []).map((m, index) => {
                 const fileUrl = m.files?.full?.url || m.files?.preview?.url;
                 if (!fileUrl) return null;
 
-                const category = (m.type === 'video' || m.type === 'gif') ? 'videos' : 'photos';
+                const category = (m.type === 'video' || m.type === 'gif') ? 'videos' : 'images';
                 const ext = fileUrl.split('.').pop().split('?')[0] || (category === 'videos' ? 'mp4' : 'jpg');
 
                 return {
@@ -99,30 +168,31 @@ const startOFScraper = async (req, res) => {
                     referer: `https://onlyfans.com/${username}/media`
                 };
             });
-        }).flat().filter(Boolean);
+        }).filter(Boolean);
 
-        // Obtenemos las cookies finales para la descarga
-        const finalCookies = (await page.cookies())
-            .map(c => `${c.name}=${c.value}`)
-            .join('; ');
+        tasks = [...tasks, ...postsTasks];
+
+        const finalCookies = (await page.cookies()).map(c => `${c.name}=${c.value}`).join('; ');
+        const userAgent = await page.evaluate(() => navigator.userAgent);
 
         await browser.close();
 
-        // --- FASE 4: Ejecución de Descargas ---
         console.log(`🚀 Iniciando descarga de ${tasks.length} archivos...`);
-        
-        const finalDownloads = await mapLimit(tasks, process.env.THREADS_DOWNLOAD || 10, async (item) => {
+        const finalDownloads = await mapLimit(tasks, process.env.THREADS_DOWNLOAD || 5, async (item) => {
             return await downloadFile(item.url, item.dest, item.filename, {
                 'Cookie': finalCookies,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                'User-Agent': userAgent,
                 'Referer': item.referer
             });
         });
 
         return res.json({
             status: true,
-            total_found: tasks.length,
-            profile: profileData,
+            nickname: username,
+            user_id: userId,
+            username: userData.name,
+            total_requested: maxPosts,
+            total_proccessed: finalDownloads.length,
             downloads: finalDownloads
         });
 
@@ -132,23 +202,5 @@ const startOFScraper = async (req, res) => {
         return res.status(500).json({ status: false, error: error.message });
     }
 };
-
-async function autoScroll(page) {
-    await page.evaluate(async () => {
-        await new Promise((resolve) => {
-            let totalHeight = 0;
-            let distance = 400;
-            let timer = setInterval(() => {
-                let scrollHeight = document.body.scrollHeight;
-                window.scrollBy(0, distance);
-                totalHeight += distance;
-                if (totalHeight >= scrollHeight) {
-                    clearInterval(timer);
-                    resolve();
-                }
-            }, 400);
-        });
-    });
-}
 
 module.exports = { startOFScraper };

@@ -13,6 +13,7 @@ videos/
 images/
 assets/
 temp/
+config/
 
 npm-debug.log*
 yarn-debug.log*

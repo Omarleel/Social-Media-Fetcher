@@ -1,8 +1,8 @@
 # SMF (Social Media Fetcher) 🚀
 
-**SMF** es una potente API de automatización construida en Node.js diseñada para el respaldo masivo y sincronización de activos multimedia (imágenes y videos) desde plataformas sociales como **TikTok**, **Pinterest**, **Instagram** y **Threads**.
+**SMF** es una potente API de automatización construida en Node.js diseñada para el respaldo masivo y sincronización de activos multimedia (imágenes y videos) desde múltiples plataformas sociales.
 
-El sistema utiliza técnicas avanzadas de inyección de sesiones y concurrencia limitada para garantizar descargas veloces sin comprometer la estabilidad del servidor ni activar firewalls de seguridad.
+El sistema utiliza técnicas avanzadas de inyección de sesiones, persistencia de perfiles de navegador y concurrencia limitada para garantizar descargas veloces sin comprometer la estabilidad del servidor ni activar firewalls de seguridad.
 
 ---
 
@@ -10,25 +10,37 @@ El sistema utiliza técnicas avanzadas de inyección de sesiones y concurrencia 
 
 SMF está construido bajo un modelo de capas modular:
 
-* **Controllers:** Gestionan la lógica específica de cada red social (Puppeteer para TikTok, REST API Pinterest, Puppeteer/GraphQL para Instagram y un motor de Smart Scroll para Threads).
+* **Controllers:** Gestionan la lógica específica de cada red social.
+* **Puppeteer Engines:** (X, OnlyFans, TikTok, Instagram, Threads) Utilizan automatización de navegador para bypass de seguridad.
+* **REST Engines:** (Pinterest, Pixiv) Consumo directo de APIs internas para máxima velocidad.
+
+
 * **Services:** Servicios universales de descarga con soporte para `Streams` y `Pipelines`.
-* **Utils:** Herramientas de control de flujo, incluyendo el motor de concurrencia limitada (`mapLimit`) y simuladores de comportamiento humano (`moveMouseInCircle`).
+* **Utils:** Herramientas de control de flujo, incluyendo el motor de concurrencia limitada (`mapLimit`), simuladores de comportamiento humano (`moveMouseInCircle`) y extractores de esquemas JSON.
 
 ---
 
 ## 🚀 Características Principales
 
-* ✅ **TikTok Engine:** Scroll infinito automatizado con Puppeteer y captura de buffers de video mediante intercepción de red.
-* ✅ **Pinterest Engine:** Extracción masiva vía API interna utilizando `bookmarks` para paginación infinita.
-* ✅ **Instagram Engine:** Consumo de GraphQL y automatización más fiel con Puppeteer.
-* ✅ **Threads Engine:** Consumo de GraphQL y automatización más fiel con Puppeteer.
-    * **Smart Reactive Scroll:** Sistema de scroll basado en eventos que detecta nuevas respuestas de red y espera tiempos dinámicos antes de continuar.
-    * **Stagnation Detection:** Algoritmo que detecta bloqueos de sesión o límites de contenido público para evitar bucles infinitos.
-    * **Spoiler/Hidden Extraction:** Análisis de scripts SJS (`data-sjs`) para recuperar contenido oculto o spoilers.
+* ✅ **OnlyFans Engine (Full Session Persistence):**
+    * **Browser Profile Persistence:** Implementa `userDataDir` para mantener sesiones iniciadas, evitando re-logueos constantes y bloqueos.
+    * **Reactive ID Interception:** Detecta dinámicamente el `userId` y metadatos del perfil mediante intercepción de red en tiempo real.
+    * **Smart Scroll:** Sistema de desplazamiento que consulta la propiedad `hasMore` de la API para detenerse exactamente al finalizar el contenido.
 
 
-* ✅ **Parallel Downloader:** Procesamiento concurrente basado en la variable `THREADS_DOWNLOAD` para manejar perfiles con +400 archivos sin saturar el stack de red.
-* ✅ **Stealth Mode:** Integración con plugins de ocultamiento para evitar detecciones de bots.
+* ✅ **Pixiv Engine (High-Speed REST):**
+    * **Chunk Processing:** Procesa metadatos en bloques de 48 ítems para optimizar el tiempo de respuesta.
+    * **Multi-Page Support:** Capacidad para extraer todas las imágenes de una sola publicación (mangas o sets de ilustraciones).
+    * **Referer Spoofing:** Gestión automática de headers para evitar el error 403 en los servidores de imágenes de Pixiv.
+
+
+* ✅ **X (Twitter) Engine:**
+    * **Dual Method Processing:** Soporte para descarga en tiempo real (mientras scrollea) o procesamiento por lotes al finalizar la recolección.
+    * **Stagnation Detection:** Algoritmo que detecta bloqueos de sesión o límites de contenido para evitar bucles infinitos en perfiles restringidos.
+
+
+* ✅ **Threads/Instagram Engine:** Consumo de GraphQL y sistemas de detección de spoilers/contenido oculto.
+* ✅ **Parallel Downloader:** Procesamiento concurrente basado en la variable `THREADS_DOWNLOAD` para manejar perfiles masivos sin saturar el stack de red.
 
 ---
 
@@ -54,12 +66,16 @@ npm install
 ```env
 PORT=3000
 DIR_STORAGE=./storage
-THREADS_DOWNLOAD=5      # Número de hilos paralelos para descargas
-PINTEREST_COOKIE=       # Cookie: _pinterest_sess
-INSTA_SESSIONID=        # Cookie: sessionid (Instagram)
-INSTA_CSRF_TOKEN=       # Cookie: csrftoken (Instagram)
-THREADS_SESSIONID=      # Cookie: sessionid (Threads)
-THREADS_CSRF_TOKEN=     # Cookie: csrftoken (Threads)
+THREADS_DOWNLOAD=5
+
+# Auth Tokens / Sessions
+X_AUTH_TOKEN=           # Cookie: auth_token de x.com
+PIXIV_PHPSESSID=        # Cookie: PHPSESSID de pixiv.net
+PINTEREST_COOKIE=       # Cookie de pinterest.com (valor de _pinterest_sess)
+INSTA_SESSIONID=        # Cookie: sessionid de instagram.com
+INSTA_CSRF_TOKEN=       # Cookie: csrftoken de instagram.com
+THREADS_SESSIONID=      # Cookie: sessionid de threads.net
+THREADS_CSRF_TOKEN=     # Cookie: csrftoken de threads.net
 
 ```
 
@@ -69,10 +85,11 @@ THREADS_CSRF_TOKEN=     # Cookie: csrftoken (Threads)
 
 | Plataforma | Endpoint | Parámetros | Descripción |
 | --- | --- | --- | --- |
-| **TikTok** | `/tiktok/get-all-media` | `username, limit` | Scroll infinito y descarga de videos .mp4 y Foto de Perfil |
-| **Pinterest** | `/pinterest/get-all-media` | `username, limit` | Paginación por bookmarks y descarga de imágenes/videos |
-| **Instagram** | `/instagram/get-all-media` | `username, limit, mediaType, method` | Descarga de Stories, Highlights, Videos, Imágenes y Foto de Perfil |
-| **Threads** | `/threads/get-all-media` | `username`, `limit, method` | Extracción reactiva de contenido multimedia, manejo de spoilers y fotos de perfil |
+| **OnlyFans** | `/onlyfans/get-all-media` | `username, limit` | Descarga de contenido mediante persistencia de perfil y smart scroll. |
+| **Pixiv** | `/pixiv/get-all-media` | `userId, limit, mediaType` | Extracción masiva de ilustraciones/mangas mediante API interna. |
+| **X (Twitter)** | `/x/get-all-media` | `username, limit, method` | Intercepción de JSON `UserMedia` con evasión de estancamiento. |
+| **Pinterest** | `/pinterest/get-all-media` | `username, limit` | Paginación por bookmarks y descarga de imágenes/videos. |
+| **Instagram** | `/instagram/get-all-media` | `username, limit` | Descarga de Stories, Highlights, Posts y Reels. |
 
 ---
 
@@ -80,16 +97,14 @@ THREADS_CSRF_TOKEN=     # Cookie: csrftoken (Threads)
 
 El sistema implementa un algoritmo de **Pooling de Promesas** mediante la utilidad `mapLimit`.
 
-A diferencia de `Promise.all` estándar, SMF gestiona una cola de ejecución. Si `THREADS_DOWNLOAD` es 5, el sistema mantendrá exactamente 5 descargas activas en todo momento. A medida que una termina, la siguiente en la cola (`allMediaTasks`) toma su lugar. Esto garantiza:
-
-1. **Estabilidad Térmica:** Menor carga de CPU.
-2. **Evasión de Bans:** Evita picos de tráfico que activan el rate-limiting de las redes sociales.
+A diferencia de `Promise.all` estándar, SMF gestiona una cola de ejecución activa. Si `THREADS_DOWNLOAD` es 5, el sistema mantendrá exactamente 5 descargas activas. Esto garantiza estabilidad térmica en el CPU y evita picos de tráfico que activan el *rate-limiting* (baneos por IP).
 
 ---
 
 ## 🛡 Seguridad y Buenas Prácticas
 
-* **Sesión Persistente:** Instagram y Threads requieren que sus respectivos `COOKIES` y `CSRF_TOKEN` sean válidos para acceder a perfiles privados o feeds extensos.
-* **Stream Pipeline:** Se utiliza `stream/promises` para escribir archivos directamente en disco, evitando cargar buffers binarios pesados en la memoria RAM.
+* **Persistencia de Perfil (OF):** El sistema crea una carpeta `config/of_profile`. Una vez que el usuario se loguea manualmente la primera vez, la sesión queda guardada localmente como un navegador Chrome real.
+* **Referer Validation:** Pixiv y X validan el header `Referer`. SMF inyecta dinámicamente la URL del post original en cada descarga para simular tráfico orgánico.
+* **Sanitización de Archivos:** Todos los títulos de posts se limpian de caracteres prohibidos (`\/:*?"<>|`) para asegurar compatibilidad con sistemas de archivos Windows/Linux.
 
 ---
