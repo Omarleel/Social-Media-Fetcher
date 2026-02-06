@@ -20,12 +20,11 @@ const getFreshAuth = async (username) => {
         { name: 'userinfo', value: process.env.DA_USERINFO },
         { name: '_px', value: process.env.DA_PX },
         { name: '_pxvid', value: process.env.DA_PXVID },
-        { name: 'pxcts', value: process.env.DA_PXCTS }   
+        { name: 'pxcts', value: process.env.DA_PXCTS }
     ];
 
-    // 2. Filtramos solo las que tienen valor y aplicamos el dominio
     const cookiesToInject = rawCookies
-        .filter(c => c.value !== undefined && c.value !== '') 
+        .filter(c => c.value !== undefined && c.value !== '')
         .map(cookie => ({
             name: cookie.name,
             value: String(cookie.value).trim(),
@@ -62,7 +61,7 @@ const getFreshAuth = async (username) => {
     const profileHeader = await page.evaluate(() => {
         const headerDiv = document.querySelector('div[style*="background-image"]');
         if (!headerDiv) return null;
-        
+
         const style = headerDiv.style.backgroundImage;
         return style.replace(/url\(['"]?(.*?)['"]?\)/i, '$1');
     });
@@ -81,7 +80,7 @@ const getFreshAuth = async (username) => {
     const ua = await page.evaluate(() => navigator.userAgent);
 
     console.log(`🔍 Verificando integridad de la sesión en la API...`);
-    
+
     const apiSessionStatus = await page.evaluate(async (token) => {
         try {
             const response = await fetch(`https://www.deviantart.com/_puppy/damz/session?da_minor_version=20230710&csrf_token=${token}`);
@@ -119,7 +118,6 @@ const getAllMedia = async (req, res) => {
     try {
         const { csrfToken, cookies, ua, profileHeader, authenticated } = await getFreshAuth(userProfile.username);
         if (!csrfToken) throw new Error("Bloqueo persistente: No se pudo extraer el CSRF Token");
-        if (!authenticated) throw new Error("Debes loguearte en DeviantArt con cookies");
 
         userProfile.header = profileHeader;
 
@@ -145,70 +143,131 @@ const getAllMedia = async (req, res) => {
         let tasks = [];
 
         if (userProfile.header) {
-            tasks.push({ 
-                url: userProfile.header, 
-                filename: 'profile_header.jpg', 
-                dest: userFolder, 
-                isOriginal: true 
+            tasks.push({
+                url: userProfile.header,
+                filename: 'profile_header.jpg',
+                dest: userFolder,
+                isOriginal: true
             });
         }
 
-        while (hasMore && (!maxItems || tasks.length < maxItems)) {
-            const apiUrl = `https://www.deviantart.com/_puppy/dashared/gallection/contents?username=${userProfile.username}&type=gallery&offset=${currentOffset}&limit=24&all_folder=true&csrf_token=${csrfToken}`;
+        if (authenticated) {
+            while (hasMore && (!maxItems || tasks.length < maxItems)) {
+                const apiUrl = `https://www.deviantart.com/_puppy/dashared/gallection/contents?username=${userProfile.username}&type=gallery&offset=${currentOffset}&limit=24&all_folder=true&csrf_token=${csrfToken}`;
 
-            const response = await fetch(apiUrl, { headers: HEADERS });
-            const data = await response.json();
+                const response = await fetch(apiUrl, { headers: HEADERS });
+                const data = await response.json();
 
-            if (!data.results || data.results.length === 0) break;
+                if (!data.results || data.results.length === 0) break;
 
-            if (!userProfile.id && data.results[0].author) {
-                const author = data.results[0].author;
-                userProfile.id = author.userId;
-                userProfile.nickname = author.username;
-                userProfile.picture = author.usericon;
-                tasks.push({ url: userProfile.picture, filename: 'profile_picture.jpg', dest: userFolder, isOriginal: true });
-            }
-
-            for (const result of data.results) {
-                if (maxItems && tasks.length >= maxItems) break;
-                if (!result.media || !result.isDownloadable) continue;
-
-                const baseUri = result.media.baseUri;
-                const prettyName = result.media.prettyName;
-                const tokens = result.media.token;
-               
-
-                let finalDownloadUrl = '';
-                let isOriginal = false;
-
-                if (tokens.length > 1) {
-                    finalDownloadUrl = `${baseUri}?token=${tokens[1]}`;
-                    isOriginal = true;
-                } else {
-                    const fullviewType = result.media.types.find(t => t.t === 'fullview') ||
-                    result.media.types[result.media.types.length - 1];
-                    console.log(`⚠️ Imagen no tiene habilitada el botón de descarga: ${prettyName}`)
-                    if (fullviewType && fullviewType.c) {
-                        const processedPath = fullviewType.c.replace('<prettyName>', prettyName);
-                        finalDownloadUrl = `${baseUri}${processedPath}?token=${tokens[0]}`;
-                    } else {
-                        finalDownloadUrl = `${baseUri}?token=${tokens[0]}`;
-                    }
+                if (!userProfile.id && data.results[0].author) {
+                    const author = data.results[0].author;
+                    userProfile.id = author.userId;
+                    userProfile.nickname = author.username;
+                    userProfile.picture = author.usericon;
+                    tasks.push({ url: userProfile.picture, filename: 'profile_picture.jpg', dest: userFolder, isOriginal: true });
                 }
 
-                const fileType = result.filetype;
+                for (const result of data.results) {
+                    if (maxItems && tasks.length >= maxItems) break;
+                    if (!result.media || !result.isDownloadable) continue;
 
-                tasks.push({
-                    url: finalDownloadUrl,
-                    isOriginal,
-                    filename: `${result.deviationId}_${prettyName}.${fileType}`,
-                    dest: path.join(userFolder, 'gallery')
-                });
+                    const baseUri = result.media.baseUri;
+                    const prettyName = result.media.prettyName;
+                    const tokens = result.media.token;
+
+
+                    let finalDownloadUrl = '';
+                    let isOriginal = false;
+
+                    if (tokens.length > 1) {
+                        finalDownloadUrl = `${baseUri}?token=${tokens[1]}`;
+                        isOriginal = true;
+                    } else {
+                        const fullviewType = result.media.types.find(t => t.t === 'fullview') ||
+                            result.media.types[result.media.types.length - 1];
+                        console.log(`⚠️ Imagen no tiene habilitada el botón de descarga: ${prettyName}`)
+                        if (fullviewType && fullviewType.c) {
+                            const processedPath = fullviewType.c.replace('<prettyName>', prettyName);
+                            finalDownloadUrl = `${baseUri}${processedPath}?token=${tokens[0]}`;
+                        } else {
+                            finalDownloadUrl = `${baseUri}?token=${tokens[0]}`;
+                        }
+                    }
+
+                    const fileType = result.filetype;
+
+                    tasks.push({
+                        url: finalDownloadUrl,
+                        isOriginal,
+                        filename: `${result.deviationId}_${prettyName}.${fileType}`,
+                        dest: path.join(userFolder, 'gallery')
+                    });
+                }
+
+                currentOffset = data.nextOffset;
+                hasMore = data.hasMore;
+                if (hasMore) await new Promise(r => setTimeout(r, 1000));
             }
 
-            currentOffset = data.nextOffset;
-            hasMore = data.hasMore;
-            if (hasMore) await new Promise(r => setTimeout(r, 1000));
+        }
+        else {
+            console.log("🕵️ Modo Sesión Invitado: Extrayendo del código fuente...");
+
+            const browser = await puppeteer.launch({ headless: 'shell', args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            await page.setUserAgent(ua);
+
+            let currentPage = 1;
+            let hasMoreContent = true;
+
+            while (hasMoreContent && (!maxItems || tasks.length < maxItems)) {
+                const pageUrl = `https://www.deviantart.com/${userProfile.username}/gallery?page=${currentPage}`;
+                console.log(`📄 Scrapeando página ${currentPage}...`);
+
+                await page.goto(pageUrl, { waitUntil: 'networkidle2' });
+
+                const extractedImages = await page.evaluate(() => {
+                    const links = Array.from(document.querySelectorAll('link[rel="preload"][as="image"][imageSrcSet]'));
+                    return links.map(link => {
+                        const rawUrl = link.getAttribute('imageSrcSet').split(' ')[0];
+                        let highQualityUrl = rawUrl
+                            .replace('/fill/w_495,h_700', '/fit/w_828,h_1172') // Ajuste de dimensiones
+                            .replace('-350t-2x.jpg', '-414w-2x.jpg');        // Ajuste de sufijo de renderizado
+
+                        const nameMatch = highQualityUrl.match(/\/([^/]+)-\d+w-2x\.jpg/);
+                        const fileName = nameMatch ? nameMatch[1] : Math.random().toString(36).substring(7);
+
+                        const idMatch = rawUrl.match(/\/([a-z0-9]{7,10})-/i);
+                        const finalId = idMatch ? idMatch[1] : 'DA';
+
+                        return {
+                            url: highQualityUrl,
+                            id: `${finalId}_${fileName}`
+                        };
+                    });
+                });
+
+                if (extractedImages.length === 0) {
+                    hasMoreContent = false;
+                    break;
+                }
+
+                for (const img of extractedImages) {
+                    if (maxItems && tasks.length >= maxItems) break;
+                    tasks.push({
+                        url: img.url,
+                        filename: `${img.id}.jpg`,
+                        dest: path.join(userFolder, 'gallery'),
+                        isOriginal: false // Marcamos como falso para aplicar headers de imagen
+                    });
+                }
+
+                currentPage++;
+                if (maxItems && tasks.length >= maxItems) hasMoreContent = false;
+                await new Promise(r => setTimeout(r, 2000)); // Delay humano
+            }
+            await browser.close();
         }
 
         console.log(`✅ Total de tareas recolectadas: ${tasks.length}. Iniciando descargas...`);
