@@ -268,10 +268,7 @@ const getAllMedia = async (req, res) => {
         await browser.close();
         res.json({
             status: true,
-            nickname: userProfile ? userProfile.nickname : username,
-            user_id: userProfile ? userProfile.id : null,
-            username: userProfile ? userProfile.username : username,
-            profile_url: userProfile ? userProfile.url : `https://www.instagram.com/${username}`,
+            profile: userProfile,
             total_requested: maxItems,
             total_proccessed: method === 'normal' ? seenIds.size : finalDownloads.length,
             downloads: finalDownloads

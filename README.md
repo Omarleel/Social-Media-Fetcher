@@ -11,7 +11,7 @@ El sistema utiliza técnicas avanzadas de inyección de sesiones, persistencia d
 SMF está construido bajo un modelo de capas modular:
 
 * **Controllers:** Gestionan la lógica específica de cada red social.
-* **Puppeteer Engines:** (X, OnlyFans, TikTok, Instagram, Threads) Utilizan automatización de navegador para bypass de seguridad.
+* **Puppeteer Engines:** (X, OnlyFans, TikTok, Instagram, Threads, DeviantArt) Utilizan automatización de navegador para bypass de seguridad.
 * **REST Engines:** (Pinterest, Pixiv) Consumo directo de APIs internas para máxima velocidad.
 
 
@@ -21,6 +21,13 @@ SMF está construido bajo un modelo de capas modular:
 ---
 
 ## 🚀 Características Principales
+
+* ✅ **DeviantArt Engine (Hybrid Puppeteer/REST):**
+    * **Profile Metadata:** Extracción automática de **Header (Banner)** y **Avatar** mediante evaluación de CSS computado en el DOM.
+    * **Smart Fallback:** Si no existe el botón de descarga original (`token[1]`), construye automáticamente la URL de **Fullview** (máxima calidad visual) usando el token de visualización (`token[0]`).
+    * **Anti-Bot Bypass:** Inyección modular de cookies de **PerimeterX** (`_px`) e intercepción de red para captura de `csrf_token` en tiempo real.
+    * **Dynamic Extensions:** Mapeo automático de la extensión del archivo (`.jpg`, `.png`) basado en el esquema `filetype` de la API.
+
 
 * ✅ **OnlyFans Engine (Full Session Persistence):**
     * **Browser Profile Persistence:** Implementa `userDataDir` para mantener sesiones iniciadas, evitando re-logueos constantes y bloqueos.
@@ -76,7 +83,12 @@ INSTA_SESSIONID=        # Cookie: sessionid de instagram.com
 INSTA_CSRF_TOKEN=       # Cookie: csrftoken de instagram.com
 THREADS_SESSIONID=      # Cookie: sessionid de threads.net
 THREADS_CSRF_TOKEN=     # Cookie: csrftoken de threads.net
-
+DA_AUTH=                # Cookie: auth de deviantart.com
+DA_AUTH_SECURE=         # Cookie: auth_secure de deviantart.com
+DA_USERINFO=            # Cookie: userinfo de deviantart.com
+DA_PX=                  # Cookie: _px' (Larga duración) de deviantart.com
+DA_PXVID=               # Cookie: _pxvid de deviantart.com
+DA_PXCTS=               # Cookie: pxcts de deviantart.com
 ```
 
 ---
@@ -85,9 +97,12 @@ THREADS_CSRF_TOKEN=     # Cookie: csrftoken de threads.net
 
 | Plataforma | Endpoint | Parámetros | Descripción |
 | --- | --- | --- | --- |
+| **DeviantArt** | `/deviantart/get-all-media` | `username, limit` | Extracción de galería completa incluyendo Header y Foto de Perfil. |
 | **OnlyFans** | `/onlyfans/get-all-media` | `username, limit` | Descarga de contenido mediante persistencia de perfil y smart scroll. |
 | **Pixiv** | `/pixiv/get-all-media` | `userId, limit, mediaType` | Extracción masiva de ilustraciones/mangas mediante API interna. |
 | **X (Twitter)** | `/x/get-all-media` | `username, limit, method` | Intercepción de JSON `UserMedia` con evasión de estancamiento. |
+| **Threads** | `/threads/get-all-media` | `username, limit` | Extracción de metadatos mediante GraphQL y detección de spoilers/ocultos. |
+| **TikTok** | `/tiktok/get-all-media` | `username, limit` | Extracción de videos sin marca de agua y foto de perfil. |
 | **Pinterest** | `/pinterest/get-all-media` | `username, limit` | Paginación por bookmarks y descarga de imágenes/videos. |
 | **Instagram** | `/instagram/get-all-media` | `username, limit` | Descarga de Stories, Highlights, Posts y Reels. |
 

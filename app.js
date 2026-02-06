@@ -8,6 +8,7 @@ const threads = require('./controllers/threadsController');
 const x = require('./controllers/xController');
 const pixiv = require('./controllers/pixivController');
 const onlyfans = require('./controllers/onlyfansController');
+const deviantart = require('./controllers/deviantartController');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +21,7 @@ app.get('/threads/get-all-media', threads.getAllMedia);
 app.get('/x/get-all-media', x.getAllMedia);
 app.get('/pixiv/get-all-media', pixiv.getAllMedia);
 app.get('/onlyfans/get-all-media', onlyfans.startOFScraper);
+app.get('/deviantart/get-all-media', deviantart.getAllMedia);
 
 app.listen(PORT, () => {
     console.log(`🚀 Servidor SocialMediaFetcher corriendo en puerto ${PORT}`);

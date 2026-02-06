@@ -137,10 +137,7 @@ const getAllMedia = async (req, res) => {
 
         res.json({
             status: true,
-            nickname: userProfile ? userProfile.nickname : cleanUsername,
-            user_id: userProfile ? userProfile.id : null,
-            username: userProfile ? userProfile.username : cleanUsername,
-            profile_url: userProfile ? userProfile.url : `https://www.tiktok.com/@${cleanUsername}`,
+            profile: userProfile,
             total_requested: maxItems,
             total_proccessed: finalTasks.length,
             results

@@ -194,10 +194,7 @@ const startOFScraper = async (req, res) => {
 
         return res.json({
             status: true,
-            nickname: userProfile.nickname,
-            user_id: userProfile.id,
-            username: userProfile.username,
-            profile_url: userProfile.url,
+            profile: userProfile,
             total_requested: maxPosts,
             total_proccessed: finalDownloads.length,
             downloads: finalDownloads

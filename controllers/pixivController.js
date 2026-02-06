@@ -113,10 +113,7 @@ const getAllMedia = async (req, res) => {
 
         res.json({
             status: true,
-            nickname: userProfile.nickname,
-            user_id: userProfile.id,
-            username: userProfile.username,
-            profile_url: userProfile.url,
+            profile: userProfile,
             total_requested: maxItems,
             total_processed: tasks.length,
             downloads: finalDownloads

@@ -145,10 +145,7 @@ const getAllMedia = async (req, res) => {
          
          res.json({
             status: true,
-            nickname: userProfile ? userProfile.nickname : username,
-            user_id: userProfile ? userProfile.id : null,
-            username: username,
-            profile_url: userProfile ? userProfile.url : `https://www.pinterest.com/${username}/`,
+            profile: userProfile,
             total_requested: maxItems,
             total_proccessed: allDownloaded.length,
             files: allDownloaded

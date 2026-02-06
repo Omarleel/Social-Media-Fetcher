@@ -9,7 +9,7 @@ puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
     const { username, limit, method = 'normal' } = req.query;
-     const cleanUsername = username.replace('@', '');
+    const cleanUsername = username.replace('@', '');
     const maxItems = limit ? parseInt(limit, 10) : null;
     const userFolder = path.join(process.env.DIR_STORAGE, 'threads', cleanUsername);
 
@@ -147,11 +147,7 @@ const getAllMedia = async (req, res) => {
         await browser.close();
         res.json({
             status: true,
-            nickname: userProfile ? userProfile.nickname : cleanUsername,
-            user_id: userProfile ? userProfile.id : null,
-            username: userProfile ? userProfile.username : cleanUsername,
-            profile_url: userProfile ? userProfile.url : `https://www.threads.net/@${cleanUsername}`,
-            total_requested: maxItems,
+            profile: userProfile,
             total_requested: maxItems,
             total_proccessed: method === 'normal' ? seenIds.size : finalDownloads.length,
             downloads: finalDownloads
