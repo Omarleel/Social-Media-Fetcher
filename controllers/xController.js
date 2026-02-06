@@ -4,15 +4,16 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { mapLimit, moveMouseInCircle } = require('../utils/utils');
 const { extractMediaFromXJson } = require('../utils/utilsX');
-
+const Profile = require('../models/Profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
     const { username, limit, method = 'normal' } = req.query;
+    const cleanUsername = username.replace('@', '');
     const maxItems = limit ? parseInt(limit, 10) : null;
-    const userFolder = path.join(process.env.DIR_STORAGE, 'x', username);
+    const userFolder = path.join(process.env.DIR_STORAGE, 'x', cleanUsername);
 
-    let browser, userInfo = null;
+    let browser, userProfile = null;
     const seenIds = new Set(), finalDownloads = [], allTasks = [], pending = [];
 
     let resolveScroll;
@@ -20,6 +21,7 @@ const getAllMedia = async (req, res) => {
     let itemsBeforeScroll = 0;
     let stagnationRetries = 0;
     const MAX_STAGNATION = 3;
+
     const processDownload = async (item, cookies, ua) => {
         try {
             const sub = item.ext === 'mp4' ? 'videos' : 'images';
@@ -70,7 +72,15 @@ const getAllMedia = async (req, res) => {
                 const data = await response.json().catch(() => null);
                 if (data) {
                     const { medias, user } = extractMediaFromXJson(data);
-                    if (!userInfo) userInfo = user;
+                    if (!userProfile && user) {
+                        userProfile = new Profile({
+                            id: user.id,
+                            nickname: user.nickname || user.name,
+                            username: username, 
+                            picture: user.picture || user.profile_image_url_https,
+                            url: `https://x.com/${username.replace('@', '')}`
+                        });
+                    }
                     const hasNewItems = handleMedias(medias);
 
                     if (hasNewItems && resolveScroll) {
@@ -128,10 +138,12 @@ const getAllMedia = async (req, res) => {
         await browser.close();
         res.json({
             status: true,
-            nickname: userInfo?.nickname || username,
-            user_id: userInfo?.id,
-            username,
-             total_requested: maxItems,
+            nickname: userProfile ? userProfile.nickname : username,
+            user_id: userProfile ? userProfile.id : null,
+            username: userProfile ? userProfile.username : username.replace('@', ''),
+            profile_url: userProfile ? userProfile.url : `https://x.com/${username.replace('@', '')}`,
+            total_requested: maxItems,
+            total_requested: maxItems,
             total_proccessed: method === 'normal' ? seenIds.size : finalDownloads.length,
             downloads: finalDownloads
         });

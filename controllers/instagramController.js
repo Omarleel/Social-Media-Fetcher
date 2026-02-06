@@ -4,7 +4,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { mapLimit } = require('../utils/utils');
 const { removeSidebar } = require('../utils/utilsInstagram');
-
+const Profile = require('../models/Profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
@@ -25,7 +25,7 @@ const getAllMedia = async (req, res) => {
 
     let browser;
     const seenIds = new Set();
-    let userInfo = null;
+    let userProfile = null;
     
     const downloadResults = [];
     const pendingDownloads = [];
@@ -114,9 +114,21 @@ const getAllMedia = async (req, res) => {
 
                     const node = edge.node?.media || edge.node || edge;
 
-                    if (!userInfo && node.user?.hd_profile_pic_url_info?.url && typeLabel === 'posts') {
-                        userInfo = node.user;
-                        handleMediaFound({ url: userInfo.hd_profile_pic_url_info.url, id: 'profile_picture', ext: 'jpg', dest: typeLabel });
+                    if (!userProfile && node.user?.hd_profile_pic_url_info?.url && typeLabel === 'posts') {
+                        userProfile = new Profile({
+                            id: node.user.id,
+                            nickname: node.user.full_name || username,
+                            username: node.user.username,
+                            picture: node.user.hd_profile_pic_url_info.url,
+                            url: `https://www.instagram.com/${node.user.username}`
+                        });
+                        
+                        handleMediaFound({ 
+                            url: userProfile.picture, 
+                            id: 'profile_picture', 
+                            ext: 'jpg', 
+                            dest: typeLabel 
+                        });
                     }
 
                     const nodeUsername = node.user?.username || node.owner?.username;
@@ -256,9 +268,10 @@ const getAllMedia = async (req, res) => {
         await browser.close();
         res.json({
             status: true,
-            nickname: userInfo?.full_name || username,
-            user_id: userInfo?.id,
-            username,
+            nickname: userProfile ? userProfile.nickname : username,
+            user_id: userProfile ? userProfile.id : null,
+            username: userProfile ? userProfile.username : username,
+            profile_url: userProfile ? userProfile.url : `https://www.instagram.com/${username}`,
             total_requested: maxItems,
             total_proccessed: method === 'normal' ? seenIds.size : finalDownloads.length,
             downloads: finalDownloads

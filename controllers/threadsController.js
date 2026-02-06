@@ -3,16 +3,17 @@ const path = require('path');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { mapLimit, moveMouseInCircle } = require('../utils/utils');
-const { extractMediaFromJson, extractSpoilersFromHTML, extractProfileFromMeta } = require('../utils/utilsThreads');
-
+const { extractMediaFromJson, extractSpoilersFromHTML, extractProfilePictureFromMeta } = require('../utils/utilsThreads');
+const Profile = require('../models/Profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
     const { username, limit, method = 'normal' } = req.query;
+     const cleanUsername = username.replace('@', '');
     const maxItems = limit ? parseInt(limit, 10) : null;
-    const userFolder = path.join(process.env.DIR_STORAGE, 'threads', username);
+    const userFolder = path.join(process.env.DIR_STORAGE, 'threads', cleanUsername);
 
-    let browser, userInfo = null;
+    let browser, userProfile = null;
     const seenIds = new Set(), finalDownloads = [], allTasks = [], pending = [];
 
     let resolveScroll;
@@ -68,7 +69,15 @@ const getAllMedia = async (req, res) => {
                 const data = await response.json().catch(() => null);
                 if (data) {
                     const { medias, user } = extractMediaFromJson(data);
-                    if (!userInfo) userInfo = user;
+                    if (!userProfile && user) {
+                        userProfile = new Profile({
+                            id: user.id,
+                            nickname: user.full_name,
+                            username: user.username,
+                            picture:  user.profile_pic_url || '',
+                            url: `https://www.threads.net/@${cleanUsername}`
+                        });
+                    }
                     const hasNewItems = handleMedias(medias);
 
                     if (hasNewItems && resolveScroll) {
@@ -80,9 +89,10 @@ const getAllMedia = async (req, res) => {
             }
         });
 
-        await page.goto(`https://www.threads.com/@${username}/media`, { waitUntil: 'networkidle2' });
+        await page.goto(`https://www.threads.com/@${cleanUsername}/media`, { waitUntil: 'networkidle2' });
 
-        handleMedias([await extractProfileFromMeta(page)].filter(Boolean));
+        
+        handleMedias([await extractProfilePictureFromMeta(page)].filter(Boolean));
 
         const scanSJS = async () => {
             for (const s of await extractSpoilersFromHTML(page)) {
@@ -137,9 +147,11 @@ const getAllMedia = async (req, res) => {
         await browser.close();
         res.json({
             status: true,
-            nickname: userInfo?.nickname || username,
-            user_id: userInfo?.id,
-            username,
+            nickname: userProfile ? userProfile.nickname : cleanUsername,
+            user_id: userProfile ? userProfile.id : null,
+            username: userProfile ? userProfile.username : cleanUsername,
+            profile_url: userProfile ? userProfile.url : `https://www.threads.net/@${cleanUsername}`,
+            total_requested: maxItems,
             total_requested: maxItems,
             total_proccessed: method === 'normal' ? seenIds.size : finalDownloads.length,
             downloads: finalDownloads

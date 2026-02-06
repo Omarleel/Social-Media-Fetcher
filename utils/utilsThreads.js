@@ -16,7 +16,7 @@ const extractMediaFromJson = (payload) => {
         if (Array.isArray(obj)) return obj.forEach(walk);
 
         if (!user && obj.user?.username) {
-            user = { id: obj.user.id || obj.user.pk, username: obj.user.username, nickname: obj.user.full_name };
+            user = obj.user;
         }
 
         const id = obj.pk || obj.id;
@@ -37,7 +37,7 @@ const extractMediaFromJson = (payload) => {
     return { medias: results, user };
 };
 
-const extractProfileFromMeta = async (page) => {
+const extractProfilePictureFromMeta = async (page) => {
     return page.evaluate(() => {
         const img = document.querySelector('meta[property="og:image"]')?.content;
         return img ? { url: img, id: 'profile_picture', ext: 'jpg' } : null;
@@ -61,4 +61,4 @@ const extractSpoilersFromHTML = async (page) => {
     });
 };
 
-module.exports = {  extractProfileFromMeta, extractMediaFromJson, extractSpoilersFromHTML };
+module.exports = {  extractProfilePictureFromMeta, extractMediaFromJson, extractSpoilersFromHTML };

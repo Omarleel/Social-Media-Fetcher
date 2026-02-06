@@ -1,6 +1,7 @@
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
 const { mapLimit } = require('../utils/utils');
+const Profile = require('../models/Profile');
 
 const getAllMedia = async (req, res) => {
     const { userId, limit, mediaType } = req.query;
@@ -38,8 +39,14 @@ const getAllMedia = async (req, res) => {
         const allIdsJson = await allIdsRes.json();
         if (profileJson.error) throw new Error("User not found or Private");
 
-        const nickname = profileJson.body.name;
-        const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'pixiv', nickname);
+        const userProfile = new Profile({
+            id: userId,
+            nickname: profileJson.body.name,
+            username: profileJson.body.account || userId,
+            picture: profileJson.body.imageBig || '',
+            url: `https://www.pixiv.net/en/users/${userId}`
+        });
+        const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'pixiv', userProfile.nickname);
 
         const illustIds = allowedTypes.includes('illustrations')
             ? Object.keys(allIdsJson.body.illusts || {}).map(id => ({ id, type: 'illustrations' })) : [];
@@ -64,8 +71,13 @@ const getAllMedia = async (req, res) => {
         const allWorks = worksMetadata.flat();
         const tasks = [];
 
-        if (profileJson.body?.imageBig) {
-            tasks.push({ id: 'profile', url: profileJson.body.imageBig, filename: `profile_picture.jpg`, dest: userFolder });
+        if (userProfile.picture) {
+            tasks.push({ 
+                id: 'profile', 
+                url: userProfile.picture, 
+                filename: `profile_picture.jpg`, 
+                dest: userFolder 
+            });
         }
 
         await mapLimit(allWorks, 15, async (work) => {
@@ -101,9 +113,10 @@ const getAllMedia = async (req, res) => {
 
         res.json({
             status: true,
-            username: nickname,
-            user_id: userId,
-            nickname,
+            nickname: userProfile.nickname,
+            user_id: userProfile.id,
+            username: userProfile.username,
+            profile_url: userProfile.url,
             total_requested: maxItems,
             total_processed: tasks.length,
             downloads: finalDownloads

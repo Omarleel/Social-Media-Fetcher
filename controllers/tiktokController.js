@@ -3,6 +3,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
 const { mapLimit, moveMouseInCircle } = require('../utils/utils');
+const Profile = require('../models/Profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {
@@ -12,7 +13,7 @@ const getAllMedia = async (req, res) => {
 
     const userFolder = path.join(process.env.DIR_STORAGE, 'tiktok', cleanUsername);
     let browser;
-    let author = null;
+    let userProfile = null;
     let allMediaTasks = [];
 
     try {
@@ -35,13 +36,23 @@ const getAllMedia = async (req, res) => {
             if (response.url().includes('/api/post/item_list/')) {
                 const data = await response.json().catch(() => ({}));
 
-                if (!author && data.itemList?.[0]?.author) {
-                    author = data.itemList[0].author;
-                    allMediaTasks.push({
-                        url: author.avatarLarger,
-                        id: 'profile_picture',
-                        ext: 'jpg'
+                if (!userProfile && data.itemList?.[0]?.author) {
+                    const author = data.itemList[0].author;
+                    userProfile = new Profile({
+                        id: author.id,
+                        nickname: author.nickname || cleanUsername,
+                        username: author.uniqueId || cleanUsername,
+                        picture: author.avatarLarger || author.avatarThumb || '',
+                        url: `https://www.tiktok.com/@${cleanUsername}`
                     });
+
+                    if (userProfile.picture) {
+                        allMediaTasks.push({
+                            id: 'profile_picture',
+                            url: userProfile.picture,
+                            ext: 'jpg'
+                        });
+                    }
                 }
 
                 if (data.hasOwnProperty('hasMore')) keepScrolling = data.hasMore;
@@ -126,9 +137,10 @@ const getAllMedia = async (req, res) => {
 
         res.json({
             status: true,
-            nickname: author?.nickname || cleanUsername,
-            user_id: author?.id,
-            username: cleanUsername,
+            nickname: userProfile ? userProfile.nickname : cleanUsername,
+            user_id: userProfile ? userProfile.id : null,
+            username: userProfile ? userProfile.username : cleanUsername,
+            profile_url: userProfile ? userProfile.url : `https://www.tiktok.com/@${cleanUsername}`,
             total_requested: maxItems,
             total_proccessed: finalTasks.length,
             results

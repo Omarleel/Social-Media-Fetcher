@@ -1,6 +1,7 @@
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
 const { mapLimit } = require('../utils/utils');
+const Profile = require('../models/Profile');
 
 const getAllMedia = async (req, res) => {
     const { username, limit } = req.query;
@@ -12,7 +13,7 @@ const getAllMedia = async (req, res) => {
     let currentBookmark = null;
     let hasMore = true;
     let allDownloaded = [];
-    let firstPin = null;
+    let userProfile = null;
     let taskCounter = 0;
 
     const PINTEREST_HEADERS = {
@@ -85,11 +86,22 @@ const getAllMedia = async (req, res) => {
             for (const pin of pins) {
                 if (maxItems && taskCounter >= maxItems) break;
 
-                if (!firstPin) {
-                    firstPin = pin;
-                    const profilePicture = firstPin?.native_creator?.image_large_url?.replace(/\/(?:\d+x\d+|_RS|_60|_140|_280|image_large_url).*?\//, '/originals/');
-                    allMediaTasks.push({ url: profilePicture, fileName: 'profile_picture.jpg', folder: 'images' });
-                    taskCounter++;
+                if (!userProfile) {
+                    const creator = pin.native_creator || pin.pinner;
+                    const highResPic = creator?.image_large_url?.replace(/\/(?:\d+x\d+|_RS|_60|_140|_280|image_large_url).*?\//, '/originals/');
+                    
+                    userProfile = new Profile({
+                        id: creator?.id || 'unknown',
+                        nickname: creator?.full_name || username,
+                        username: username,
+                        picture: highResPic || '',
+                        url: `https://www.pinterest.com/${username}/`
+                    });
+
+                    if (userProfile.picture) {
+                        allMediaTasks.push({ url: userProfile.picture, fileName: 'profile_picture.jpg', folder: 'images' });
+                        taskCounter++;
+                    }
                 }
 
                 const pinId = pin.id;
@@ -130,14 +142,13 @@ const getAllMedia = async (req, res) => {
 
             if (hasMore) await new Promise(r => setTimeout(r, 800));
         }
-
-         const profileInfo = firstPin ? (firstPin.native_creator || firstPin.pinner) : { full_name: username, id: null };
          
          res.json({
             status: true,
-            nickname: profileInfo.full_name,
-            user_id: profileInfo.id,
-            username,
+            nickname: userProfile ? userProfile.nickname : username,
+            user_id: userProfile ? userProfile.id : null,
+            username: username,
+            profile_url: userProfile ? userProfile.url : `https://www.pinterest.com/${username}/`,
             total_requested: maxItems,
             total_proccessed: allDownloaded.length,
             files: allDownloaded

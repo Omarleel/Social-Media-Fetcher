@@ -4,7 +4,7 @@ const path = require('path');
 const { downloadFile } = require('../services/downloadService');
 const { mapLimit, sanitizeFilename } = require('../utils/utils');
 const { smartScroll } = require('../utils/utilsOnlyfans');
-
+const Profile = require('../models/Profile');
 puppeteer.use(StealthPlugin());
 
 const USER_DATA_DIR = path.join(__dirname, '../config/of_profile');
@@ -16,7 +16,7 @@ const startOFScraper = async (req, res) => {
     if (!username) return res.status(400).json({ error: "username query param is required" });
 
     let browser;
-    let userId = null;
+    let userProfile = null;
     let tasks = [];
     let interceptedPosts = [];
     let hasMoreContent = true;
@@ -75,7 +75,16 @@ const startOFScraper = async (req, res) => {
                 if (url.includes(`/api2/v2/users/${username}`) && !url.includes('/posts') && !url.includes('/subscribe')) {
                     try {
                         const json = await response.json();
-                        if (json.id) {
+                        if (!userProfile && json.id) {
+                            userProfile = new Profile({
+                                id: json.id,
+                                nickname: json.name || username,
+                                username: json.username || username,
+                                picture: json.avatar || '',
+                                header: json.header || '',
+                                url: `https://onlyfans.com/${json.username || username}`
+                            });
+                            
                             clearTimeout(timeout);
                             resolve(json);
                         }
@@ -107,35 +116,36 @@ const startOFScraper = async (req, res) => {
         console.log(`🟢 Navegando a: https://onlyfans.com/${username}`);
         await page.goto(`https://onlyfans.com/${username}`, { waitUntil: 'networkidle2' });
 
-        const userData = await waitForUserId;
-        userId = userData.id.toString();
+        await waitForUserId;
+
         const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'onlyfans', username);
 
-        if (userData.avatar) {
+        if (userProfile.picture) {
             tasks.push({
-                id: 'profile_pic',
-                url: userData.avatar,
+                id: 'profile_picture',
+                url: userProfile.picture,
                 filename: `profile_picture.jpg`,
                 dest: userFolder,
-                referer: `https://onlyfans.com/${username}/media`
+                referer: `${userProfile.url}/media`
             });
         }
-        if (userData.header) {
+        if (userProfile.header) {
             tasks.push({
-                id: 'header_pic',
-                url: userData.header,
+                id: 'header_picture',
+                url: userProfile.header,
                 filename: `header_picture.jpg`,
                 dest: userFolder,
-                referer: `https://onlyfans.com/${username}/media`
+                referer: `${userProfile.url}/media`
             });
         }
 
-        console.log(`🎯 ID Capturado: ${userId}. Iniciando recolección de media...`);
+
+        console.log(`🎯 ID Capturado: ${userProfile.id}. Iniciando recolección de media...`);
 
         await page.goto(`https://onlyfans.com/${username}/media`, { waitUntil: 'networkidle2' });
         await page.waitForSelector('.g-user-name', { timeout: 15000 });
 
-        const profileData = await page.evaluate(() => ({
+        const myProfileData = await page.evaluate(() => ({
             name: document.querySelector('.g-user-name')?.textContent?.trim() || '',
             scrapedAt: new Date().toISOString()
         }));
@@ -144,6 +154,7 @@ const startOFScraper = async (req, res) => {
         const finalPosts = maxPosts !== null ? interceptedPosts.slice(0, maxPosts) : interceptedPosts;
         const postsTasks = finalPosts.flatMap(post => {
             const postDate = post.postedAt ? post.postedAt.split('T')[0] : 'date_unknown';
+            const postText = post.text || '';
             const cleanText = sanitizeFilename(postText);
 
             const folderName = `${postDate}_${post.id}_${cleanText}`;
@@ -160,7 +171,7 @@ const startOFScraper = async (req, res) => {
                     url: fileUrl,
                     filename: `${m.id}_p${index}.${ext}`,
                     dest: path.join(userFolder, category, folderName),
-                    referer: `https://onlyfans.com/${username}/media`
+                    referer: `${userProfile.url}/media`
                 };
             });
         }).filter(Boolean);
@@ -183,9 +194,10 @@ const startOFScraper = async (req, res) => {
 
         return res.json({
             status: true,
-            nickname: userData.name,
-            user_id: userId,
-            username,
+            nickname: userProfile.nickname,
+            user_id: userProfile.id,
+            username: userProfile.username,
+            profile_url: userProfile.url,
             total_requested: maxPosts,
             total_proccessed: finalDownloads.length,
             downloads: finalDownloads
