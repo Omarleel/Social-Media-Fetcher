@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const path = require('path');
 const { downloadFile } = require('../services/downloadService');
-const { mapLimit } = require('../utils/utils');
+const { mapLimit, sanitizeFilename } = require('../utils/utils');
 const { smartScroll } = require('../utils/utilsOnlyfans');
 
 puppeteer.use(StealthPlugin());
@@ -16,7 +16,7 @@ const startOFScraper = async (req, res) => {
     if (!username) return res.status(400).json({ error: "username query param is required" });
 
     let browser;
-    let userId = null; 
+    let userId = null;
     let tasks = [];
     let interceptedPosts = [];
     let hasMoreContent = true;
@@ -24,13 +24,13 @@ const startOFScraper = async (req, res) => {
     try {
         browser = await puppeteer.launch({
             headless: false,
-            userDataDir: USER_DATA_DIR, 
+            userDataDir: USER_DATA_DIR,
             args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox', 
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
                 '--start-maximized',
                 '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process' 
+                '--disable-features=IsolateOrigins,site-per-process'
             ]
         });
 
@@ -54,7 +54,7 @@ const startOFScraper = async (req, res) => {
                 await page.waitForFunction(() => {
                     return document.cookie.includes('auth_id') || !!document.querySelector('.b-chat__header');
                 }, { timeout: 300000 });
-                
+
                 loggedIn = true;
                 console.log('✅ Login detectado y persistido en el perfil.');
             } catch (e) {
@@ -79,7 +79,7 @@ const startOFScraper = async (req, res) => {
                             clearTimeout(timeout);
                             resolve(json);
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
 
                 if (url.includes('/posts/medias')) {
@@ -89,17 +89,17 @@ const startOFScraper = async (req, res) => {
                             if (maxPosts === null || interceptedPosts.length < maxPosts) {
                                 interceptedPosts.push(...json.list);
                             }
-                            
+
                             hasMoreContent = json.hasMore === true;
 
                             if (maxPosts !== null && interceptedPosts.length >= maxPosts) {
                                 console.log(`limit alcanzado: ${interceptedPosts.length} posts.`);
                                 hasMoreContent = false;
                             }
-                            
+
                             console.log(`✨ API: Total posts capturados: ${interceptedPosts.length}`);
                         }
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             });
         });
@@ -144,11 +144,7 @@ const startOFScraper = async (req, res) => {
         const finalPosts = maxPosts !== null ? interceptedPosts.slice(0, maxPosts) : interceptedPosts;
         const postsTasks = finalPosts.flatMap(post => {
             const postDate = post.postedAt ? post.postedAt.split('T')[0] : 'date_unknown';
-            const cleanText = (post.text || 'no_text')
-                .replace(/<[^>]*>/g, '') 
-                .replace(/[\\/:*?"<>|]/g, '_')
-                .trim()
-                .substring(0, 30).trim() || 'no_text';
+            const cleanText = sanitizeFilename(postText);
 
             const folderName = `${postDate}_${post.id}_${cleanText}`;
 

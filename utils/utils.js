@@ -70,4 +70,19 @@ const moveMouseInCircle = async (p) => {
     }
 };
 
-module.exports = { mapLimit, injectVisualCursor, moveMouseInCircle };
+const sanitizeFilename = (text, limit = 25) => {
+    if (!text) return 'no_text';
+
+    let clean = text
+        .replace(/<[^>]*>/g, '')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/[\x00-\x1f\x80-\x9f]/g, '')
+        .trim()
+        .substring(0, limit)
+        .replace(/[\s.]+$/, '')              
+        .trim();
+    const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+    return reservedNames.test(clean) ? `${clean}_f` : (clean || 'no_text');
+};
+
+module.exports = { mapLimit, injectVisualCursor, moveMouseInCircle, sanitizeFilename };
