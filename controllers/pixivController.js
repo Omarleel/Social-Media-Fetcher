@@ -101,6 +101,7 @@ const getAllMedia = async (req, res) => {
 
         res.json({
             status: true,
+            username: nickname,
             user_id: userId,
             nickname,
             total_requested: maxItems,
