@@ -58,13 +58,32 @@ const getFreshAuth = async (username) => {
         timeout: 60000
     });
 
-    const profileHeader = await page.evaluate(() => {
-        const headerDiv = document.querySelector('div[style*="background-image"]');
-        if (!headerDiv) return null;
+    const profile = await page.evaluate((targetUser) => {
+        const userLink = document.querySelector(`a[data-username="${targetUser}" i][data-userid]`);
 
-        const style = headerDiv.style.backgroundImage;
-        return style.replace(/url\(['"]?(.*?)['"]?\)/i, '$1');
-    });
+        const id = userLink ? userLink.getAttribute('data-userid') : null;
+
+        const titleText = document.title;
+        const nickname = titleText.split(' - ')[0] || targetUser;
+
+        const picture = userLink ? userLink.getAttribute('data-icon') :
+            (document.querySelector('meta[property="og:image"]')?.content || '');
+        const headerDiv = document.querySelector('div[style*="background-image"]');
+        let header = '';
+        if (headerDiv) {
+            const style = headerDiv.style.backgroundImage;
+            header = style.replace(/url\(['"]?(.*?)['"]?\)/i, '$1');
+        }
+
+        return {
+            id: parseInt(id), // Fallback al username si falla la captura del ID
+            nickname: nickname,
+            username: targetUser,
+            picture: picture,
+            header: header,
+            url: `https://www.deviantart.com/${targetUser}`
+        };
+    }, username);
 
     if (!capturedToken) {
         capturedToken = await page.evaluate(() => {
@@ -99,7 +118,7 @@ const getFreshAuth = async (username) => {
 
     await browser.close();
 
-    return { csrfToken: capturedToken, cookies, ua, profileHeader, browser, authenticated };
+    return { csrfToken: capturedToken, cookies, ua, profile: new Profile(profile), browser, authenticated };
 };
 
 const getAllMedia = async (req, res) => {
@@ -116,10 +135,10 @@ const getAllMedia = async (req, res) => {
     const userFolder = path.join(process.env.DIR_STORAGE || './storage', 'deviantart', userProfile.username);
 
     try {
-        const { csrfToken, cookies, ua, profileHeader, authenticated } = await getFreshAuth(userProfile.username);
+        const { csrfToken, cookies, ua, profile, authenticated } = await getFreshAuth(userProfile.username);
         if (!csrfToken) throw new Error("Bloqueo persistente: No se pudo extraer el CSRF Token");
 
-        userProfile.header = profileHeader;
+        userProfile.header = profile.header;
 
         const HEADERS = {
             'Accept': 'application/json, text/plain, */*',
@@ -213,7 +232,12 @@ const getAllMedia = async (req, res) => {
         }
         else {
             console.log("🕵️ Modo Sesión Invitado: Extrayendo del código fuente...");
-
+            if (!userProfile.id) {
+                userProfile.id = profile.id;
+                userProfile.nickname = profile.username;
+                userProfile.picture = profile.picture;
+                tasks.push({ url: userProfile.picture, filename: 'profile_picture.jpg', dest: userFolder, isOriginal: true });
+            }
             const browser = await puppeteer.launch({ headless: 'shell', args: ['--no-sandbox'] });
             const page = await browser.newPage();
             await page.setUserAgent(ua);
@@ -228,24 +252,61 @@ const getAllMedia = async (req, res) => {
                 await page.goto(pageUrl, { waitUntil: 'networkidle2' });
 
                 const extractedImages = await page.evaluate(() => {
-                    const links = Array.from(document.querySelectorAll('link[rel="preload"][as="image"][imageSrcSet]'));
-                    return links.map(link => {
-                        const rawUrl = link.getAttribute('imageSrcSet').split(' ')[0];
-                        let highQualityUrl = rawUrl
-                            .replace('/fill/w_495,h_700', '/fit/w_828,h_1172') // Ajuste de dimensiones
-                            .replace('-350t-2x.jpg', '-414w-2x.jpg');        // Ajuste de sufijo de renderizado
+                    const rows = Array.from(document.querySelectorAll('div[data-testid="content_row"]'));
+                    const results = [];
 
-                        const nameMatch = highQualityUrl.match(/\/([^/]+)-\d+w-2x\.jpg/);
-                        const fileName = nameMatch ? nameMatch[1] : Math.random().toString(36).substring(7);
+                    rows.forEach(row => {
+                        const thumbs = row.querySelectorAll('div[data-testid="thumb"] img');
 
-                        const idMatch = rawUrl.match(/\/([a-z0-9]{7,10})-/i);
-                        const finalId = idMatch ? idMatch[1] : 'DA';
+                        thumbs.forEach(img => {
+                            const srcSet = img.getAttribute('srcset');
+                            if (!srcSet) return;
 
-                        return {
-                            url: highQualityUrl,
-                            id: `${finalId}_${fileName}`
-                        };
+                            const rawUrl = srcSet.split(' ')[0];
+
+                            let highQualityUrl = rawUrl;
+
+                            try {
+                                const urlObj = new URL(rawUrl);
+                                const token = urlObj.searchParams.get('token');
+
+                                if (token) {
+                                    const payloadPart = token.split('.')[1];
+                                    const decodedPayload = JSON.parse(atob(payloadPart));
+
+                                    const meta = decodedPayload.obj[0][0];
+                                    const maxWidth = meta.width.replace(/[<=]/g, '');
+                                    const maxHeight = meta.height.replace(/[<=]/g, '');
+
+                                    highQualityUrl = rawUrl
+                                        .replace(/\/(?:fill|crop|fit)\/w_\d+,h_\d+(?:,x_\d+,y_\d+,scl_[\d.]+)?/, `/v1/fit/w_${maxWidth},h_${maxHeight}`)
+                                        .replace(/-\d+[tw](?:-2x)?\.jpg/, '-414w-2x.jpg')
+                                        .replace(/q_\d+/, 'q_70');
+                                }
+                            } catch (e) {
+                                highQualityUrl = rawUrl.replace(/q_\d+/, 'q_70');
+                            }
+                            const idMatch = rawUrl.match(/\/([a-z0-9]{7,10})-/i);
+                            const finalId = idMatch ? idMatch[1] : 'DA';
+
+                            const altText = img.getAttribute('alt') || '';
+                            const fileName = altText
+                                .toLowerCase()
+                                .replace(/\[.*?\]/g, '')
+                                .replace(/[^a-z0-9]/g, '_')
+                                .replace(/_+/g, '_')
+                                .replace(/^_|_$/g, '')
+                                .substring(0, 30);
+                            const uniqueId = `${finalId}_${fileName}_${Date.now()}`;
+                            results.push({
+                                url: highQualityUrl,
+                                id: uniqueId,
+                                title: altText
+                            });
+                        });
                     });
+
+                    return results;
                 });
 
                 if (extractedImages.length === 0) {
@@ -259,7 +320,7 @@ const getAllMedia = async (req, res) => {
                         url: img.url,
                         filename: `${img.id}.jpg`,
                         dest: path.join(userFolder, 'gallery'),
-                        isOriginal: false // Marcamos como falso para aplicar headers de imagen
+                        isOriginal: false
                     });
                 }
 
