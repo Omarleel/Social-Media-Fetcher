@@ -3,8 +3,8 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const path = require('path');
 const { downloadFile } = require('../services/downloadService');
 const { mapLimit, sanitizeFilename } = require('../utils/utils');
-const { smartScroll } = require('../utils/utilsOnlyfans');
-const Profile = require('../models/Profile');
+const { smartScroll } = require('../utils/onlyfans');
+const Profile = require('../models/profile');
 puppeteer.use(StealthPlugin());
 
 const USER_DATA_DIR = path.join(__dirname, '../config/of_profile');

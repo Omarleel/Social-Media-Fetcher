@@ -3,8 +3,8 @@ const path = require('path');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { mapLimit } = require('../utils/utils');
-const { removeSidebar } = require('../utils/utilsInstagram');
-const Profile = require('../models/Profile');
+const { removeSidebar } = require('../utils/instagram');
+const Profile = require('../models/profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {

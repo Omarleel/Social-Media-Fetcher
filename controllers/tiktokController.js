@@ -3,7 +3,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
 const { mapLimit, moveMouseInCircle } = require('../utils/utils');
-const Profile = require('../models/Profile');
+const Profile = require('../models/profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {

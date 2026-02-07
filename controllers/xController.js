@@ -3,8 +3,8 @@ const path = require('path');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { mapLimit, moveMouseInCircle } = require('../utils/utils');
-const { extractMediaFromXJson } = require('../utils/utilsX');
-const Profile = require('../models/Profile');
+const { extractMediaFromXJson } = require('../utils/x');
+const Profile = require('../models/profile');
 puppeteer.use(StealthPlugin());
 
 const getAllMedia = async (req, res) => {

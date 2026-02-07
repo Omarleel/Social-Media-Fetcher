@@ -1,7 +1,7 @@
 const { downloadFile } = require('../services/downloadService');
 const path = require('path');
 const { mapLimit } = require('../utils/utils');
-const Profile = require('../models/Profile');
+const Profile = require('../models/profile');
 
 const getAllMedia = async (req, res) => {
     const { username, limit } = req.query;
