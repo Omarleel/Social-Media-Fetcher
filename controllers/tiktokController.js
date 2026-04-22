@@ -27,15 +27,13 @@ const getAllMedia = async (req, res) => {
         });
         const page = await browser.newPage();
         await page.setViewport({ width: 1280, height: 720 });
-        // await injectVisualCursor(page);
 
-        const videoListMap = new Map();
+        const mediaMap = new Map();
         let keepScrolling = true;
 
         page.on('response', async (response) => {
             if (response.url().includes('/api/post/item_list/')) {
                 const data = await response.json().catch(() => ({}));
-
                 if (!userProfile && data.itemList?.[0]?.author) {
                     const author = data.itemList[0].author;
                     userProfile = new Profile({
@@ -50,18 +48,37 @@ const getAllMedia = async (req, res) => {
                         allMediaTasks.push({
                             id: 'profile_picture',
                             url: userProfile.picture,
-                            ext: 'jpg'
+                            ext: 'jpg',
+                            type: 'image'
                         });
-                    }
+                    }   
                 }
-
                 if (data.hasOwnProperty('hasMore')) keepScrolling = data.hasMore;
 
                 const currentLimit = maxItems ? (maxItems - allMediaTasks.length) : Infinity;
 
                 data.itemList?.forEach(item => {
-                    if (videoListMap.size < currentLimit) {
-                        videoListMap.set(item.id, item.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0] || item.video?.downloadAddr);
+                    if (mediaMap.size < currentLimit) {
+                        const url = item.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0] || item.video?.downloadAddr;
+                        if (url) {
+                            mediaMap.set(item.id, { url, type: 'post' });
+                        }
+                    }
+                });
+            }
+            else if (response.url().includes('/api/story/item_list/')) {
+                const data = await response.json().catch(() => ({}));
+              
+                if (data.hasOwnProperty('hasMore')) keepScrolling = data.hasMore;
+
+                const currentLimit = maxItems ? (maxItems - allMediaTasks.length) : Infinity;
+
+                data.itemList?.forEach(item => {
+                    if (mediaMap.size < currentLimit) {
+                        const url = item.video?.bitrateInfo?.[0]?.PlayAddr?.UrlList?.[0] || item.video?.downloadAddr;
+                        if (url) {
+                            mediaMap.set(item.id, { url, type: 'story' });
+                        }
                     }
                 });
             }
@@ -75,7 +92,7 @@ const getAllMedia = async (req, res) => {
         let stalledCycles = 0;
 
         while (keepScrolling) {
-            const currentSize = videoListMap.size;
+            const currentSize = mediaMap.size;
             const totalCollected = allMediaTasks.length + currentSize;
 
             if (maxItems && totalCollected >= maxItems) break;
@@ -117,13 +134,24 @@ const getAllMedia = async (req, res) => {
         const cookies = (await page.cookies()).map(c => `${c.name}=${c.value}`).join('; ');
         const userAgent = await page.evaluate(() => navigator.userAgent);
 
-        const videoTasks = Array.from(videoListMap).map(([id, url]) => ({ id, url, ext: 'mp4' }));
+        const videoTasks = Array.from(mediaMap).map(([id, data]) => ({ 
+            id, 
+            url: data.url, 
+            type: data.type, 
+            ext: 'mp4' 
+        }));
         allMediaTasks = [...allMediaTasks, ...videoTasks];
 
         const finalTasks = maxItems ? allMediaTasks.slice(0, maxItems) : allMediaTasks;
 
         const results = await mapLimit(finalTasks, process.env.THREADS_DOWNLOAD || 5, async (item) => {
-            const subFolder = item.ext === 'mp4' ? 'videos' : 'images';
+            let subFolder = 'images';
+            if (item.type === 'post') {
+                subFolder = 'posts';
+            } else if (item.type === 'story') {
+                subFolder = 'stories';
+            }
+
             const finalPath = path.join(userFolder, subFolder);
 
             return await downloadFile(item.url, finalPath, `${item.id}.${item.ext}`, {
